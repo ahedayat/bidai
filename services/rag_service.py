@@ -1,9 +1,10 @@
-"""RAG orchestration service (Phase 4–5)."""
+"""RAG orchestration service (Phase 4–6)."""
 
 from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from langchain_core.embeddings import Embeddings
@@ -13,12 +14,17 @@ from agent.graph import get_compiled_rag_graph
 from config.settings import settings
 from core.exceptions import (
     BidaiError,
+    EmptyDocumentListError,
     EmptyQuestionError,
     GraphInvocationError,
+    PDFError,
     RAGError,
     RetrievalError,
 )
-from core.models import RAGAnswer, RAGSource
+from core.models import IndexResult, RAGAnswer, RAGSource
+from ingestion.chunker import chunk_document
+from ingestion.indexer import build_document_id, index_documents
+from ingestion.pdf_loader import load_pdf
 from services.openai_client import create_chat_model
 from services.rag_helpers import (
     format_context_block,
@@ -64,6 +70,64 @@ class RAGService:
                 persist_directory=self._persist_directory,
             )
         return self._compiled_graph
+
+    def index_pdf(
+        self,
+        path: str | Path,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> IndexResult:
+        """Load, chunk, and index a PDF into the local vector store.
+
+        Args:
+            path: Path to the PDF file.
+            on_progress: Optional callback for status messages during indexing.
+
+        Returns:
+            ``IndexResult`` with the stable ``document_id`` and chunk count.
+
+        Raises:
+            PDFError: When PDF loading or validation fails.
+            EmptyDocumentListError: When no indexable text chunks are produced.
+            MissingOpenAIAPIKeyError: When embeddings require an API key.
+            IndexingError: When vector indexing fails.
+        """
+
+        def _progress(message: str) -> None:
+            if on_progress is not None:
+                on_progress(message)
+
+        resolved_path = Path(path).expanduser().resolve()
+        document_id = build_document_id(resolved_path)
+
+        _progress("Loading PDF...")
+        extracted = load_pdf(resolved_path)
+        _progress(f"Loaded {extracted.page_count} pages")
+
+        if extracted.total_char_count < 50:
+            raise PDFError(
+                "Could not extract enough text from this PDF. "
+                "Scanned/image-only PDFs are not supported in this version."
+            )
+
+        _progress("Chunking document...")
+        docs = chunk_document(extracted, document_id=document_id)
+        if not docs:
+            raise EmptyDocumentListError(
+                "No indexable text found in the PDF. "
+                "The document may be empty or image-only."
+            )
+        _progress(f"Created {len(docs)} chunks")
+
+        _progress("Indexing chunks (this may take a while)...")
+        result = index_documents(
+            docs,
+            document_id=document_id,
+            embedding_function=self._embedding_function,
+            persist_directory=self._persist_directory,
+        )
+        _progress("Indexing completed")
+        return result
 
     def ask(
         self,

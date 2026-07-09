@@ -1,12 +1,21 @@
-"""Entry point stub for the Persian tender-document QA MVP."""
+"""Entry point for the Persian tender-document QA MVP desktop GUI."""
 
 from __future__ import annotations
 
+import sys
 
-def main() -> None:
-    """Bootstrap entry point; full GUI wiring comes in Phase 6."""
-    print("bidai MVP bootstrap complete. GUI not implemented yet (Phase 6).")
+from PyQt6.QtWidgets import QApplication
+
+from ui.main_window import MainWindow
+
+
+def main() -> int:
+    """Launch the PyQt desktop application."""
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
