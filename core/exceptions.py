@@ -27,3 +27,15 @@ class PDFEncryptedError(PDFError):
 
 class PDFExtractionError(PDFError):
     """Raised when text extraction from a PDF fails."""
+
+
+class ChunkingError(BidaiError):
+    """Base exception for document chunking errors."""
+
+
+class InvalidChunkConfigError(ChunkingError):
+    """Raised when chunk size or overlap settings are invalid."""
+
+
+class EmptyExtractedDocumentError(ChunkingError):
+    """Raised when an extracted document has no pages."""
