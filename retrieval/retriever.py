@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -9,6 +10,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStoreRetriever
 
 from config.settings import settings
+from config.logging_config import get_logger
 from core.exceptions import (
     CollectionNotFoundError,
     EmptyQuestionError,
@@ -23,6 +25,8 @@ from retrieval.vector_store import (
     sanitize_collection_name,
 )
 from services.openai_client import create_embeddings
+
+logger = get_logger(__name__)
 
 
 def _validate_document_id(document_id: str) -> str:
@@ -122,6 +126,13 @@ def retrieve_documents(
     if not question or not question.strip():
         raise EmptyQuestionError("question must be a non-empty string")
 
+    stripped_question = question.strip()
+    logger.info(
+        "Retrieving top-%d chunks for document_id=%s",
+        _resolve_top_k(top_k),
+        document_id.strip(),
+    )
+
     retriever = get_retriever(
         document_id,
         top_k=top_k,
@@ -130,7 +141,7 @@ def retrieve_documents(
     )
 
     try:
-        results = retriever.invoke(question.strip())
+        results = retriever.invoke(stripped_question)
     except Exception as exc:
         if isinstance(exc, (EmptyQuestionError, InvalidDocumentIdError, InvalidTopKError, CollectionNotFoundError)):
             raise
@@ -138,5 +149,11 @@ def retrieve_documents(
 
     if not isinstance(results, list):
         results = [results]
+
+    logger.info("Retrieved %d chunks for document_id=%s", len(results), document_id.strip())
+    if logger.isEnabledFor(logging.DEBUG):
+        for index, doc in enumerate(results):
+            page = doc.metadata.get("page", "?")
+            logger.debug("  [%d] page=%s chunk_index=%s", index, page, doc.metadata.get("chunk_index"))
 
     return results

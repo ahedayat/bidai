@@ -11,6 +11,7 @@ from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from agent.graph import get_compiled_rag_graph
+from config.logging_config import get_logger
 from config.settings import settings
 from core.exceptions import (
     BidaiError,
@@ -25,6 +26,7 @@ from core.models import IndexResult, RAGAnswer, RAGSource
 from ingestion.chunker import chunk_document
 from ingestion.indexer import build_document_id, index_documents
 from ingestion.pdf_loader import load_pdf
+from retrieval.vector_store import delete_collection, sanitize_collection_name
 from services.openai_client import create_chat_model
 from services.rag_helpers import (
     format_context_block,
@@ -40,6 +42,8 @@ __all__ = [
     "format_sources",
     "generate_answer",
 ]
+
+logger = get_logger(__name__)
 
 
 class RAGService:
@@ -99,12 +103,18 @@ class RAGService:
 
         resolved_path = Path(path).expanduser().resolve()
         document_id = build_document_id(resolved_path)
+        logger.info("Starting PDF indexing: %s (document_id=%s)", resolved_path.name, document_id)
 
         _progress("Loading PDF...")
         extracted = load_pdf(resolved_path)
         _progress(f"Loaded {extracted.page_count} pages")
 
         if extracted.total_char_count < 50:
+            logger.warning(
+                "Insufficient text extracted from %s (%d chars)",
+                resolved_path.name,
+                extracted.total_char_count,
+            )
             raise PDFError(
                 "Could not extract enough text from this PDF. "
                 "Scanned/image-only PDFs are not supported in this version."
@@ -127,7 +137,41 @@ class RAGService:
             persist_directory=self._persist_directory,
         )
         _progress("Indexing completed")
+        logger.info(
+            "PDF indexing finished: document_id=%s, chunks=%d",
+            result.document_id,
+            result.chunk_count,
+        )
         return result
+
+    def clear_document_index(self, document_id: str) -> bool:
+        """Delete the Chroma collection for a document.
+
+        Args:
+            document_id: Indexed document identifier.
+
+        Returns:
+            True when an existing collection was deleted, False when none existed.
+        """
+        resolved_id = document_id.strip()
+        if not resolved_id:
+            return False
+
+        directory = self._persist_directory or settings.chroma_persist_dir
+        collection_name = sanitize_collection_name(resolved_id)
+        deleted = delete_collection(directory, collection_name)
+        if deleted:
+            logger.info(
+                "Deleted Chroma collection %s for document_id=%s",
+                collection_name,
+                resolved_id,
+            )
+        else:
+            logger.info(
+                "No Chroma collection to delete for document_id=%s",
+                resolved_id,
+            )
+        return deleted
 
     def ask(
         self,
@@ -158,6 +202,12 @@ class RAGService:
 
         stripped_question = question.strip()
         stripped_document_id = document_id.strip()
+        logger.info(
+            "RAG question started: document_id=%s, question_length=%d",
+            stripped_document_id,
+            len(stripped_question),
+        )
+
         initial_state: dict = {
             "question": stripped_question,
             "document_id": stripped_document_id,
@@ -172,6 +222,10 @@ class RAGService:
         except BidaiError:
             raise
         except Exception as exc:
+            logger.exception(
+                "RAG graph invocation failed for document_id=%s",
+                stripped_document_id,
+            )
             raise GraphInvocationError(
                 f"RAG graph invocation failed for document_id={stripped_document_id!r}: {exc}"
             ) from exc
@@ -183,6 +237,13 @@ class RAGService:
 
         chat_model = self._get_chat_model()
         model_name = getattr(chat_model, "model_name", None) or settings.chat_model
+
+        logger.info(
+            "RAG question completed: document_id=%s, retrieved=%d, answer_length=%d",
+            stripped_document_id,
+            len(retrieved_docs),
+            len(answer_text),
+        )
 
         return RAGAnswer(
             question=stripped_question,

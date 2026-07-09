@@ -8,6 +8,7 @@ from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from config.settings import settings
+from config.logging_config import get_logger
 from core.exceptions import EmptyExtractedDocumentError, InvalidChunkConfigError
 from core.models import ExtractedDocument
 
@@ -29,6 +30,8 @@ PERSIAN_SEPARATORS: list[str] = [
 
 _DEFAULT_CHUNK_SIZE = 1000
 _DEFAULT_CHUNK_OVERLAP = 150
+
+logger = get_logger(__name__)
 
 
 def _resolve_chunk_params(
@@ -83,6 +86,12 @@ def chunk_document(
         )
 
     resolved_size, resolved_overlap = _resolve_chunk_params(chunk_size, chunk_overlap)
+    logger.info(
+        "Chunking document %s (chunk_size=%d, overlap=%d)",
+        extracted.file_name,
+        resolved_size,
+        resolved_overlap,
+    )
     splitter = _make_splitter(resolved_size, resolved_overlap)
 
     resolved_document_id = document_id if document_id is not None else extracted.file_name
@@ -115,6 +124,7 @@ def chunk_document(
             )
             global_chunk_index += 1
 
+    logger.info("Chunking complete: %d chunks from %s", len(documents), extracted.file_name)
     return documents
 
 

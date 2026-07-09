@@ -42,6 +42,8 @@ wheels/
 htmlcov/
 .tox/
 .nox/
+logs/
+*.log
 
 # IDE
 .idea/

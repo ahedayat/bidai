@@ -15,10 +15,12 @@ def test_settings_defaults() -> None:
     assert s.chunk_overlap == 150
     assert s.top_k == 4
     assert s.chroma_persist_dir.name == "chroma"
+    assert s.log_level == "INFO"
 
 
 def test_project_imports() -> None:
     import agent  # noqa: F401
+    import config.logging_config  # noqa: F401
     import core  # noqa: F401
     import ingestion  # noqa: F401
     import retrieval  # noqa: F401

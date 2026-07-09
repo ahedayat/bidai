@@ -10,6 +10,7 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
 from config.settings import settings
+from config.logging_config import get_logger
 from core.exceptions import (
     EmptyDocumentListError,
     IndexingFailureError,
@@ -27,6 +28,8 @@ from retrieval.vector_store import (
 from services.openai_client import create_embeddings
 
 _REQUIRED_METADATA_KEYS = ("document_id", "source", "page", "chunk_index")
+
+logger = get_logger(__name__)
 
 
 def build_document_id(source_path: str | Path) -> str:
@@ -126,6 +129,13 @@ def index_documents(
     if not resolved_document_id:
         raise InvalidDocumentIdError("document_id must be a non-empty string")
 
+    logger.info(
+        "Indexing %d chunks for document_id=%s (replace_existing=%s)",
+        len(docs),
+        resolved_document_id,
+        replace_existing,
+    )
+
     embeddings = _resolve_embedding_function(embedding_function)
     directory = ensure_persist_directory(persist_directory)
     collection_name = sanitize_collection_name(resolved_document_id)
@@ -167,6 +177,12 @@ def index_documents(
             f"Failed to index {len(docs)} chunks for document {resolved_document_id!r}: {exc}"
         ) from exc
 
+    logger.info(
+        "Indexing complete: document_id=%s, collection=%s, chunks=%d",
+        resolved_document_id,
+        collection_name,
+        len(docs),
+    )
     return IndexResult(
         document_id=resolved_document_id,
         collection_name=collection_name,

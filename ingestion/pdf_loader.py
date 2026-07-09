@@ -8,6 +8,7 @@ from pathlib import Path
 
 import fitz
 
+from config.logging_config import get_logger
 from core.exceptions import (
     PDFEncryptedError,
     PDFExtractionError,
@@ -16,6 +17,8 @@ from core.exceptions import (
     PDFReadError,
 )
 from core.models import ExtractedDocument, ExtractedPage
+
+logger = get_logger(__name__)
 
 _PDF_SUFFIXES = {".pdf"}
 _HORIZONTAL_WHITESPACE_RE = re.compile(r"[^\S\n]+")
@@ -45,13 +48,16 @@ def _validate_pdf_path(path: Path) -> None:
 def load_pdf(path: str | Path, *, min_page_chars: int = 30) -> ExtractedDocument:
     """Load a PDF and extract text page by page."""
     source_path = Path(path).expanduser().resolve()
+    logger.info("Loading PDF: %s", source_path.name)
     _validate_pdf_path(source_path)
 
     try:
         document = fitz.open(source_path)
     except fitz.FileDataError as exc:
+        logger.error("Invalid PDF file: %s", source_path.name)
         raise PDFInvalidFileError(f"File is not a valid PDF: {source_path}") from exc
     except Exception as exc:
+        logger.error("Failed to read PDF: %s", source_path.name)
         raise PDFReadError(f"Unable to read PDF: {source_path}") from exc
 
     try:
@@ -85,6 +91,11 @@ def load_pdf(path: str | Path, *, min_page_chars: int = 30) -> ExtractedDocument
             )
 
         total_char_count = sum(page.char_count for page in pages)
+        logger.info(
+            "PDF loaded: %s pages, %d characters",
+            len(pages),
+            total_char_count,
+        )
         return ExtractedDocument(
             source_path=source_path,
             file_name=source_path.name,

@@ -55,6 +55,9 @@ class MainWindow(QMainWindow):
         self._index_button = QPushButton("Process/Index")
         self._index_button.clicked.connect(self._on_index_clicked)
 
+        self._new_document_button = QPushButton("New Document")
+        self._new_document_button.clicked.connect(self._on_new_document_clicked)
+
         self._status_label = QLabel()
         self._status_label.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -62,6 +65,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self._file_picker)
         layout.addWidget(self._index_button)
+        layout.addWidget(self._new_document_button)
         layout.addWidget(self._status_label, stretch=1)
         return layout
 
@@ -103,6 +107,7 @@ class MainWindow(QMainWindow):
 
         self._index_button.setEnabled(has_pdf and not is_indexing and not is_querying)
         self._file_picker.setEnabled(not is_indexing and not is_querying)
+        self._new_document_button.setEnabled(not is_indexing and not is_querying)
         self._question_input.setEnabled(is_indexed and not is_indexing and not is_querying)
         self._send_button.setEnabled(is_indexed and not is_indexing and not is_querying)
 
@@ -111,6 +116,28 @@ class MainWindow(QMainWindow):
         self._chat_panel.clear()
         self._sources_panel.clear()
         self._set_status("PDF selected")
+        self._update_controls()
+
+    def _on_new_document_clicked(self) -> None:
+        if self._document_id is not None:
+            reply = QMessageBox.question(
+                self,
+                "New Document",
+                "Start a new document? The current indexed data will be removed from "
+                "the local vector store and the chat will be cleared.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+            self._rag_service.clear_document_index(self._document_id)
+
+        self._document_id = None
+        self._file_picker.clear()
+        self._chat_panel.clear()
+        self._sources_panel.clear()
+        self._question_input.clear()
+        self._set_status("No PDF selected")
         self._update_controls()
 
     def _on_index_clicked(self) -> None:

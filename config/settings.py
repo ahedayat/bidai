@@ -28,6 +28,8 @@ class Settings:
     chunk_size: int
     chunk_overlap: int
     top_k: int
+    log_level: str
+    log_file: Path | None
     project_root: Path
 
 
@@ -37,6 +39,13 @@ def load_settings() -> Settings:
     if not chroma_path.is_absolute():
         chroma_path = _PROJECT_ROOT / chroma_path
 
+    log_file_raw = os.getenv("LOG_FILE", "").strip()
+    log_file_path: Path | None = None
+    if log_file_raw:
+        log_file_path = Path(log_file_raw)
+        if not log_file_path.is_absolute():
+            log_file_path = _PROJECT_ROOT / log_file_path
+
     return Settings(
         openai_api_key=os.getenv("OPENAI_API_KEY", ""),
         embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
@@ -45,6 +54,8 @@ def load_settings() -> Settings:
         chunk_size=_env_int("CHUNK_SIZE", 1000),
         chunk_overlap=_env_int("CHUNK_OVERLAP", 150),
         top_k=_env_int("TOP_K", 4),
+        log_level=os.getenv("LOG_LEVEL", "INFO"),
+        log_file=log_file_path,
         project_root=_PROJECT_ROOT,
     )
 
