@@ -39,3 +39,31 @@ class InvalidChunkConfigError(ChunkingError):
 
 class EmptyExtractedDocumentError(ChunkingError):
     """Raised when an extracted document has no pages."""
+
+
+class IndexingError(BidaiError):
+    """Base exception for vector indexing errors."""
+
+
+class EmptyDocumentListError(IndexingError):
+    """Raised when indexing is called with an empty document list."""
+
+
+class MissingDocumentMetadataError(IndexingError):
+    """Raised when a document is missing required metadata fields."""
+
+
+class InvalidDocumentIdError(IndexingError):
+    """Raised when a document ID is missing or invalid."""
+
+
+class VectorStoreError(IndexingError):
+    """Raised when Chroma vector store initialization fails."""
+
+
+class IndexingFailureError(IndexingError):
+    """Raised when adding documents to the vector store fails."""
+
+
+class MissingOpenAIAPIKeyError(IndexingError):
+    """Raised when OpenAI embeddings are requested without an API key."""

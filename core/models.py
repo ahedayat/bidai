@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 
@@ -41,3 +42,15 @@ class ExtractedDocument:
     @property
     def short_pages(self) -> tuple[ExtractedPage, ...]:
         return tuple(page for page in self.pages if page.is_short)
+
+
+@dataclass(frozen=True, slots=True)
+class IndexResult:
+    """Outcome of indexing LangChain documents into Chroma."""
+
+    document_id: str
+    collection_name: str
+    chunk_count: int
+    persist_directory: Path
+    replaced_existing: bool
+    indexed_at: datetime
