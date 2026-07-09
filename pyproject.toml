@@ -1,0 +1,25 @@
+[project]
+name = "bidai"
+version = "0.1.0"
+description = "Persian tender-document QA MVP"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv",
+    "pymupdf",
+    "langchain",
+    "langchain-openai",
+    "langchain-chroma",
+    "langchain-text-splitters",
+    "chromadb",
+    "langgraph",
+    "PyQt6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
