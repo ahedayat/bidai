@@ -65,5 +65,33 @@ class IndexingFailureError(IndexingError):
     """Raised when adding documents to the vector store fails."""
 
 
-class MissingOpenAIAPIKeyError(IndexingError):
-    """Raised when OpenAI embeddings are requested without an API key."""
+class MissingOpenAIAPIKeyError(BidaiError):
+    """Raised when OpenAI API access is requested without an API key."""
+
+
+class RetrievalError(BidaiError):
+    """Base exception for document retrieval errors."""
+
+
+class EmptyQuestionError(RetrievalError):
+    """Raised when a question is empty or whitespace-only."""
+
+
+class InvalidTopKError(RetrievalError):
+    """Raised when top_k is not a positive integer."""
+
+
+class CollectionNotFoundError(RetrievalError):
+    """Raised when no indexed collection exists for the given document ID."""
+
+
+class NoRetrievedDocumentsError(RetrievalError):
+    """Raised when retrieval returns no documents for a question."""
+
+
+class RAGError(BidaiError):
+    """Base exception for RAG answer-generation errors."""
+
+
+class ChatAPIError(RAGError):
+    """Raised when the OpenAI Chat API call fails."""

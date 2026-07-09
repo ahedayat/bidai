@@ -54,3 +54,27 @@ class IndexResult:
     persist_directory: Path
     replaced_existing: bool
     indexed_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RAGSource:
+    """A retrieved chunk formatted for display or downstream use."""
+
+    page: int
+    chunk_index: int
+    page_chunk_index: int | None
+    source: str
+    file_name: str | None
+    text_preview: str
+
+
+@dataclass(frozen=True, slots=True)
+class RAGAnswer:
+    """Outcome of a synchronous RAG question-answering request."""
+
+    question: str
+    answer: str
+    document_id: str
+    sources: tuple[RAGSource, ...]
+    retrieved_count: int
+    model_name: str
