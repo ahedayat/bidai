@@ -95,3 +95,11 @@ class RAGError(BidaiError):
 
 class ChatAPIError(RAGError):
     """Raised when the OpenAI Chat API call fails."""
+
+
+class GraphError(BidaiError):
+    """Base exception for LangGraph workflow failures."""
+
+
+class GraphInvocationError(GraphError):
+    """Raised when the compiled RAG graph invocation fails unexpectedly."""

@@ -1,4 +1,4 @@
-"""RAG orchestration service (Phase 4)."""
+"""RAG orchestration service (Phase 4–5)."""
 
 from __future__ import annotations
 
@@ -6,90 +6,38 @@ import argparse
 import sys
 from pathlib import Path
 
-from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import AIMessage
 
-from agent.prompts import RAG_PROMPT
+from agent.graph import get_compiled_rag_graph
 from config.settings import settings
 from core.exceptions import (
-    ChatAPIError,
+    BidaiError,
     EmptyQuestionError,
-    NoRetrievedDocumentsError,
+    GraphInvocationError,
     RAGError,
+    RetrievalError,
 )
 from core.models import RAGAnswer, RAGSource
-from retrieval.retriever import retrieve_documents
 from services.openai_client import create_chat_model
+from services.rag_helpers import (
+    format_context_block,
+    format_source,
+    format_sources,
+    generate_answer,
+)
 
-_DEFAULT_PREVIEW_LEN = 200
-_CONTEXT_PREVIEW_LEN = 4000
-
-
-def _truncate_text(text: str, max_len: int) -> str:
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 1].rstrip() + "…"
-
-
-def format_source(doc: Document, *, preview_len: int = _DEFAULT_PREVIEW_LEN) -> RAGSource:
-    """Format a retrieved LangChain document as a UI-friendly source entry."""
-    metadata = doc.metadata
-    return RAGSource(
-        page=int(metadata.get("page", 0)),
-        chunk_index=int(metadata.get("chunk_index", -1)),
-        page_chunk_index=(
-            int(metadata["page_chunk_index"])
-            if metadata.get("page_chunk_index") is not None
-            else None
-        ),
-        source=str(metadata.get("source", "")),
-        file_name=(
-            str(metadata["file_name"]) if metadata.get("file_name") is not None else None
-        ),
-        text_preview=_truncate_text(doc.page_content, preview_len),
-    )
-
-
-def format_sources(
-    docs: list[Document],
-    *,
-    preview_len: int = _DEFAULT_PREVIEW_LEN,
-) -> tuple[RAGSource, ...]:
-    """Format retrieved documents into source entries."""
-    return tuple(format_source(doc, preview_len=preview_len) for doc in docs)
-
-
-def format_context_block(
-    docs: list[Document],
-    *,
-    max_chunk_len: int = _CONTEXT_PREVIEW_LEN,
-) -> str:
-    """Combine retrieved chunks into a context block with page/chunk metadata."""
-    blocks: list[str] = []
-    for doc in docs:
-        metadata = doc.metadata
-        page = metadata.get("page", "?")
-        chunk_index = metadata.get("chunk_index", "?")
-        page_chunk_index = metadata.get("page_chunk_index")
-        file_name = metadata.get("file_name")
-
-        header_parts = [f"[صفحه {page}", f"بخش {chunk_index}"]
-        if page_chunk_index is not None:
-            header_parts.append(f"زیربخش صفحه {page_chunk_index}")
-        if file_name:
-            header_parts.append(f"فایل: {file_name}")
-        header = " | ".join(header_parts) + "]"
-
-        content = _truncate_text(doc.page_content, max_chunk_len)
-        blocks.append(f"{header}\n{content}")
-
-    return "\n\n---\n\n".join(blocks)
+__all__ = [
+    "RAGService",
+    "format_context_block",
+    "format_source",
+    "format_sources",
+    "generate_answer",
+]
 
 
 class RAGService:
-    """Synchronous retrieve-and-generate RAG service (no LangGraph)."""
+    """Synchronous RAG service backed by a compiled LangGraph workflow."""
 
     def __init__(
         self,
@@ -101,11 +49,21 @@ class RAGService:
         self._chat_model = chat_model
         self._embedding_function = embedding_function
         self._persist_directory = persist_directory
+        self._compiled_graph = None
 
     def _get_chat_model(self) -> BaseChatModel:
         if self._chat_model is not None:
             return self._chat_model
         return create_chat_model()
+
+    def _get_compiled_graph(self):
+        if self._compiled_graph is None:
+            self._compiled_graph = get_compiled_rag_graph(
+                chat_model=self._chat_model,
+                embedding_function=self._embedding_function,
+                persist_directory=self._persist_directory,
+            )
+        return self._compiled_graph
 
     def ask(
         self,
@@ -114,7 +72,7 @@ class RAGService:
         *,
         top_k: int | None = None,
     ) -> RAGAnswer:
-        """Retrieve relevant chunks and generate a Persian answer.
+        """Retrieve relevant chunks and generate a Persian answer via LangGraph.
 
         Args:
             question: User question.
@@ -129,51 +87,45 @@ class RAGService:
             CollectionNotFoundError: When the document is not indexed.
             NoRetrievedDocumentsError: When retrieval returns no chunks.
             ChatAPIError: When the chat model invocation fails.
+            GraphInvocationError: When graph invocation fails unexpectedly.
         """
         if not question or not question.strip():
             raise EmptyQuestionError("question must be a non-empty string")
 
         stripped_question = question.strip()
-        retrieved = retrieve_documents(
-            stripped_question,
-            document_id,
-            top_k=top_k,
-            embedding_function=self._embedding_function,
-            persist_directory=self._persist_directory,
-        )
-
-        if not retrieved:
-            raise NoRetrievedDocumentsError(
-                f"No relevant chunks retrieved for document_id={document_id!r}"
-            )
-
-        context = format_context_block(retrieved)
-        sources = format_sources(retrieved)
-        chat_model = self._get_chat_model()
-        model_name = getattr(chat_model, "model_name", None) or settings.chat_model
+        stripped_document_id = document_id.strip()
+        initial_state: dict = {
+            "question": stripped_question,
+            "document_id": stripped_document_id,
+        }
+        if top_k is not None:
+            initial_state["top_k"] = top_k
 
         try:
-            messages = RAG_PROMPT.format_messages(
-                context=context,
-                question=stripped_question,
-            )
-            response = chat_model.invoke(messages)
-        except RAGError:
+            result = self._get_compiled_graph().invoke(initial_state)
+        except (RAGError, RetrievalError):
+            raise
+        except BidaiError:
             raise
         except Exception as exc:
-            raise ChatAPIError(f"Chat API call failed: {exc}") from exc
+            raise GraphInvocationError(
+                f"RAG graph invocation failed for document_id={stripped_document_id!r}: {exc}"
+            ) from exc
 
-        if isinstance(response, AIMessage):
-            answer_text = str(response.content)
-        else:
-            answer_text = str(response)
+        retrieved_docs = result.get("retrieved_docs", [])
+        answer_text = result.get("answer", "")
+        source_dicts = result.get("sources", [])
+        sources = tuple(RAGSource(**source_dict) for source_dict in source_dicts)
+
+        chat_model = self._get_chat_model()
+        model_name = getattr(chat_model, "model_name", None) or settings.chat_model
 
         return RAGAnswer(
             question=stripped_question,
             answer=answer_text,
-            document_id=document_id.strip(),
+            document_id=stripped_document_id,
             sources=sources,
-            retrieved_count=len(retrieved),
+            retrieved_count=len(retrieved_docs),
             model_name=model_name,
         )
 
